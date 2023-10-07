@@ -11,9 +11,8 @@ from aapis.orchestrator.v1 import (
 from orchestrator.click_types import LogLevel
 from orchestrator.jobs import jobFromProto
 
-# https://stackoverflow.com/questions/38387443/how-to-implement-a-async-grpc-python-server/63020796#63020796
 
-INSECURE_PORT = 40040
+DEFAULT_INSECURE_PORT = 40040
 
 class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
     def __init__(self, num_allowed_threads):
@@ -212,11 +211,11 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
             message=message
         )
 
-async def serve(num_allowed_threads):
+async def serve(port, num_allowed_threads):
     server = aio.server()
     orchestrator_pb2_grpc.add_OrchestratorServiceServicer_to_server(
         Orchestrator(num_allowed_threads), server)
-    listen_addr = f"[::]:{INSECURE_PORT}"
+    listen_addr = f"[::]:{port}"
     server.add_insecure_port(listen_addr)
     logging.info(f"Starting orchestrator server on {listen_addr}")
     await server.start()
@@ -230,16 +229,22 @@ async def serve(num_allowed_threads):
     default=1,
 )
 @click.option(
+    "-p",
+    "--port",
+    type=int,
+    default=DEFAULT_INSECURE_PORT,
+)
+@click.option(
     "-l",
     "--log-level",
     type=LogLevel(),
     default=logging.INFO,
 )
-def cli(num_allowed_threads, log_level):
+def cli(num_allowed_threads, port, log_level):
     """Spawn the Orchestrator daemon."""
     logging.basicConfig(level=log_level)
     logging.info(f"Log level set to {log_level}")
-    asyncio.run(serve(num_allowed_threads))
+    asyncio.run(serve(port, num_allowed_threads))
 
 def main():
     cli()

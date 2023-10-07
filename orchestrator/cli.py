@@ -8,7 +8,7 @@ from aapis.orchestrator.v1 import (
     orchestrator_pb2
 )
 
-INSECURE_PORT = 40040
+DEFAULT_INSECURE_PORT = 40040
 
 class NotRequiredIf(click.Option):
     def __init__(self, *args, **kwargs):
@@ -36,10 +36,19 @@ class NotRequiredIf(click.Option):
             ctx, opts, args)
 
 @click.group()
-def cli():
+@click.pass_context
+@click.option(
+    "-p",
+    "--port",
+    type=int,
+    default=DEFAULT_INSECURE_PORT,
+)
+def cli(ctx: click.Context, port):
     """Orchestrate background jobs."""
+    ctx.obj = {"insecure_port": port}
 
 @cli.command()
+@click.pass_context
 @click.option(
     "--id",
     "id",
@@ -55,10 +64,10 @@ def cli():
     not_required_if="id",
     help="Get status for all jobs"
 )
-def status(id, all):
+def status(ctx: click.Context, id, all):
     """Get the status of orchestrated jobs"""
     async def status_impl(id):
-        async with aio.insecure_channel(f"localhost:{INSECURE_PORT}") as channel:
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             response = await stub.JobStatus(orchestrator_pb2.JobStatusRequest(job_id=id))
         if response.status == orchestrator_pb2.JOB_STATUS_PAUSED:
@@ -78,7 +87,7 @@ def status(id, all):
         if response.message:
             print(response.message)
     async def status_all_impl():
-        async with aio.insecure_channel(f"localhost:{INSECURE_PORT}") as channel:
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             response = await stub.JobsSummaryStatus(orchestrator_pb2.JobsSummaryStatusRequest())
         print("JOB STATUSES")
@@ -106,6 +115,7 @@ def status(id, all):
         asyncio.run(status_all_impl())
 
 @cli.command()
+@click.pass_context
 @click.argument(
     "input"
 )
@@ -119,10 +129,10 @@ def status(id, all):
     show_default=True,
     help="Priority level for the job"
 )
-def mp4(input, output, priority):
+def mp4(ctx: click.Context, input, output, priority):
     """Kickoff an mp4 job"""
     async def mp4_impl(inp, out, pri):
-        async with aio.insecure_channel(f"localhost:{INSECURE_PORT}") as channel:
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             if inp.isnumeric():
                 response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
