@@ -117,10 +117,20 @@ def status(ctx: click.Context, id, all):
 @cli.command()
 @click.pass_context
 @click.argument(
-    "input"
+    "input",
+    help="Input path OR input job ID"
 )
 @click.argument(
-    "output",)
+    "output",
+    help="Output path for the video"
+)
+@click.option(
+    "-b",
+    "--blocker",
+    type=int,
+    multiple=True,
+    help="Job ID(s) to block on"
+)
 @click.option(
     "--priority",
     "priority",
@@ -129,15 +139,15 @@ def status(ctx: click.Context, id, all):
     show_default=True,
     help="Priority level for the job"
 )
-def mp4(ctx: click.Context, input, output, priority):
+def mp4(ctx: click.Context, input, output, blocker, priority):
     """Kickoff an mp4 job"""
-    async def mp4_impl(inp, out, pri):
+    async def cmd_impl(inp, out, pri, blk):
         async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             if inp.isnumeric():
                 response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
                     priority=pri,
-                    blocking_job_ids=[int(inp)],
+                    blocking_job_ids=blk + [int(inp)],
                     mp4=orchestrator_pb2.Mp4Job(
                         job_id_input=int(inp),
                         output_path=out
@@ -146,7 +156,7 @@ def mp4(ctx: click.Context, input, output, priority):
             else:
                 response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
                     priority=pri,
-                    blocking_job_ids=[],
+                    blocking_job_ids=blk,
                     mp4=orchestrator_pb2.Mp4Job(
                         input_path=inp,
                         output_path=out
@@ -156,7 +166,60 @@ def mp4(ctx: click.Context, input, output, priority):
             print(Fore.GREEN + "Job ID" + Style.RESET_ALL + f": {response.job_id}")
         else:
             print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
-    asyncio.run(mp4_impl(input, output, priority))
+    asyncio.run(cmd_impl(input, output, priority, blocker))
+
+@cli.command()
+@click.pass_context
+@click.argument(
+    "input",
+    nargs=-1,
+    help="Input paths AND/OR input job IDs"
+)
+@click.argument(
+    "output",
+    help="Output path for the video"
+)
+@click.option(
+    "-b",
+    "--blocker",
+    type=int,
+    multiple=True,
+    help="Job ID(s) to block on"
+)
+@click.option(
+    "--priority",
+    "priority",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Priority level for the job"
+)
+def mp4_unite(ctx: click.Context, input, output, blocker, priority):
+    """Kickoff an mp4 unite job"""
+    async def cmd_impl(inp, out, pri, blk):
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            input_paths = []
+            input_job_ids = []
+            for cmd_inp in inp:
+                if cmd_inp.isnumeric():
+                    input_job_ids.append(int(cmd_inp))
+                else:
+                    input_paths.append(cmd_inp)
+            response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
+                priority=pri,
+                blocking_job_ids=blk + input_job_ids,
+                mp4_unite=orchestrator_pb2.Mp4UniteJob(
+                    input_paths=input_paths,
+                    job_id_inputs=input_job_ids,
+                    output_path=out
+                )
+            ))
+        if response.success:
+            print(Fore.GREEN + "Job ID" + Style.RESET_ALL + f": {response.job_id}")
+        else:
+            print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
+    asyncio.run(cmd_impl(input, output, priority, blocker))
 
 def main():
     cli()
