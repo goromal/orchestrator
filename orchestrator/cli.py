@@ -117,12 +117,10 @@ def status(ctx: click.Context, id, all):
 @cli.command()
 @click.pass_context
 @click.argument(
-    "input",
-    help="Input path OR input job ID"
+    "input"
 )
 @click.argument(
-    "output",
-    help="Output path for the video"
+    "output"
 )
 @click.option(
     "-b",
@@ -172,12 +170,10 @@ def mp4(ctx: click.Context, input, output, blocker, priority):
 @click.pass_context
 @click.argument(
     "input",
-    nargs=-1,
-    help="Input paths AND/OR input job IDs"
+    nargs=-1
 )
 @click.argument(
-    "output",
-    help="Output path for the video"
+    "output"
 )
 @click.option(
     "-b",
@@ -224,20 +220,16 @@ def mp4_unite(ctx: click.Context, input, output, blocker, priority):
 @cli.command()
 @click.pass_context
 @click.argument(
-    "url",
-    help="URL to do the scraping on"
+    "url"
 )
 @click.argument(
-    "xpath",
-    help="XPath to limit the scraping scope"
+    "xpath"
 )
 @click.argument(
-    "ext",
-    help="File extension to narrow down the scraping"
+    "ext"
 )
 @click.argument(
-    "output",
-    help="Path to scrape the files into"
+    "output"
 )
 @click.option(
     "-b",
