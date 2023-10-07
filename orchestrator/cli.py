@@ -221,6 +221,60 @@ def mp4_unite(ctx: click.Context, input, output, blocker, priority):
             print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
     asyncio.run(cmd_impl(input, output, priority, blocker))
 
+@cli.command()
+@click.pass_context
+@click.argument(
+    "url",
+    help="URL to do the scraping on"
+)
+@click.argument(
+    "xpath",
+    help="XPath to limit the scraping scope"
+)
+@click.argument(
+    "ext",
+    help="File extension to narrow down the scraping"
+)
+@click.argument(
+    "output",
+    help="Path to scrape the files into"
+)
+@click.option(
+    "-b",
+    "--blocker",
+    type=int,
+    multiple=True,
+    help="Job ID(s) to block on"
+)
+@click.option(
+    "--priority",
+    "priority",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Priority level for the job"
+)
+def scrape(ctx: click.Context, url, xpath, ext, output, blocker, priority):
+    """Kickoff a scrape job"""
+    async def cmd_impl(url, xpath, ext, output, pri, blk):
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
+                priority=pri,
+                blocking_job_ids=blk,
+                scrape=orchestrator_pb2.ScrapeJob(
+                    url=url,
+                    xpath=xpath,
+                    output_path=output,
+                    file_extension=ext
+                )
+            ))
+        if response.success:
+            print(Fore.GREEN + "Job ID" + Style.RESET_ALL + f": {response.job_id}")
+        else:
+            print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
+    asyncio.run(cmd_impl(url, xpath, ext, output, priority, blocker))
+
 def main():
     cli()
 
