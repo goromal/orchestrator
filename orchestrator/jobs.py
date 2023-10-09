@@ -1,4 +1,6 @@
 import asyncio
+import glob
+import logging
 import re
 
 from aapis.orchestrator.v1 import orchestrator_pb2
@@ -6,6 +8,8 @@ from aapis.orchestrator.v1 import orchestrator_pb2
 
 class Job(object):
     def __init__(self, priority, blockers, exec):
+        logging.debug(f"Constructing Job with exec `{exec}` and blockers {blockers}")
+
         self.id = -1
         self.priority = priority
 
@@ -20,8 +24,10 @@ class Job(object):
 
         self.outputs = None
         self.children = [] # job objects
+        self.msg = ""
 
     async def execute(self):
+        logging.debug(f"Executing command `{' '.join(self.exec)}`")
         proc = await asyncio.create_subprocess_exec(
             *self.exec,
             stdout=asyncio.subprocess.PIPE,
@@ -43,13 +49,23 @@ class Job(object):
 
     async def removeBlocker(self, job):
         if job.id in self.blockers:
+            logging.debug(f"Job ID {self.id}: Removing blocker {job.id}")
             self.blockers.remove(job.id)
             await self.processBlockingJobOutputs(job.id, job.outputs)
+            if job.hasChildren():
+                for child in job.getChildren():
+                    logging.debug(f"Job ID {self.id}: Adding Job ID {child.id} as a blocker")
+                    self.blockers.append(child.id)
         if len(self.blockers) == 0 and self.status == orchestrator_pb2.JobStatus.JOB_STATUS_BLOCKED:
             if self.hasChildren():
+                logging.debug(f"Job ID {self.id}: Unblocked with status complete with {len(self.children)} children")
                 self.status = orchestrator_pb2.JobStatus.JOB_STATUS_COMPLETE
             else:
+                logging.debug(f"Job ID {self.id}: Unblocked with status queued")
                 self.status = orchestrator_pb2.JobStatus.JOB_STATUS_QUEUED
+            return True
+        else:
+            return False
 
     async def processBlockingJobOutputs(self, id, outputs):
         pass # can be overridden
@@ -78,12 +94,14 @@ class Mp4Job(Job):
     async def processBlockingJobOutputs(self, id, outputs):
         if id == self.input_id:
             if len(outputs) == 1:
+                logging.debug(f"Job ID {self.id} spawning a child")
                 self.exec = ["mp4", outputs[0], self.output_path]
             elif len(outputs) > 1:
+                logging.debug(f"Job ID {self.id} spawning children")
                 for output in outputs:
                     self.children.append(Mp4Job(
                         self.priority,
-                        self.blockers,
+                        self.blockers[:],
                         output,
                         None,
                         f"{self.output_path.replace('.mp4', '')}_{self.child_counter}.mp4"
@@ -92,8 +110,8 @@ class Mp4Job(Job):
 
 class Mp4UniteJob(Job):
     def __init__(self, priority, blockers, input_paths, input_ids, output_path):
-        self.input_paths = input_paths
-        self.input_ids = input_ids
+        self.input_paths = list(input_paths)
+        self.input_ids = list(input_ids) # TODO make explicit use of this
         self.output_path = output_path
         if len(self.input_ids) == 0:
             exec = ["mp4unite", *self.input_paths, self.output_path]
@@ -106,13 +124,10 @@ class Mp4UniteJob(Job):
         return [self.output_path]
     
     async def processBlockingJobOutputs(self, id, outputs):
-        if id in self.input_ids:
-            self.input_paths += outputs
-            for input_id in self.input_ids:
-                if input_id in self.blockers:
-                    # not finished collecting input_id outputs
-                    return
-            self.exec = ["mp4unite", *self.input_paths, self.output_path]
+        if outputs is not None: # ^^^^
+            if len(outputs) > 0:
+                self.input_paths += outputs
+                self.exec = ["mp4unite", *self.input_paths, self.output_path]
 
 class ScrapeJob(Job):
     def __init__(self, priority, blockers, url, xpath, output_path, file_ext):
@@ -120,6 +135,45 @@ class ScrapeJob(Job):
 
     async def getOutputs(self, stdout):
         return re.findall(r"-> (\S+)\.\.\.", stdout)
+
+class ListJob(Job):
+    def __init__(self, priority, blockers, path, file_ext):
+        self.path = path
+        self.file_ext = file_ext
+        super(ListJob, self).__init__(priority, blockers, ["ls", path])
+    
+    async def getOutputs(self, stdout):
+        if self.file_ext:
+            files = re.findall(rf"(\S+\.{self.file_ext})", stdout)
+        else:
+            files = re.findall(r"(\S+)", stdout)
+        return [f"{self.path}/{file}" for file in files]
+
+class RemoveJob(Job):
+    def __init__(self, priority, blockers, input_path, input_id):
+        self.input_id = input_id
+        if self.input_id is None:
+            rmfilelist = glob.glob(input_path)
+            exec = ["rm"] + rmfilelist
+        else:
+            exec = ["rm__uninitialized"]
+        super(RemoveJob, self).__init__(priority, blockers, exec)
+
+    async def processBlockingJobOutputs(self, id, outputs):
+        if id == self.input_id:
+            if outputs is not None: # ^^^^
+                if len(outputs) == 1:
+                    logging.debug(f"Job ID {self.id} spawning a child")
+                    self.exec = ["rm", outputs[0]]
+                elif len(outputs) > 1:
+                    logging.debug(f"Job ID {self.id} spawning children")
+                    for output in outputs:
+                        self.children.append(RemoveJob(
+                            self.priority,
+                            self.blockers[:],
+                            output,
+                            None
+                        ))
 
 def jobFromProto(proto):
     if proto.WhichOneof("job") == "mp4":
@@ -141,7 +195,7 @@ def jobFromProto(proto):
                 None,
                 proto.mp4.job_id_input,
                 proto.mp4.output_path
-            )
+            ), ""
         else:
             return None, "Input not specified"
     elif proto.WhichOneof("job") == "mp4_unite":
@@ -170,5 +224,32 @@ def jobFromProto(proto):
             proto.scrape.output_path,
             proto.scrape.file_extension
         ), ""
+    elif proto.WhichOneof("job") == "list":
+        return ListJob(
+            proto.priority,
+            proto.blocking_job_ids,
+            proto.list.path,
+            proto.list.file_extension
+        ), ""
+    elif proto.WhichOneof("job") == "remove":
+        if proto.remove.WhichOneof("input") == "input_path":
+            return RemoveJob(
+                proto.priority,
+                proto.blocking_job_ids,
+                proto.remove.input_path,
+                None
+            ), ""
+        elif proto.remove.WhichOneof("input") == "job_id_input":
+            blocking_job_ids = proto.blocking_job_ids
+            if proto.remove.job_id_input not in blocking_job_ids:
+                blocking_job_ids.append(proto.remove.job_id_input)
+            return RemoveJob(
+                proto.priority,
+                blocking_job_ids,
+                None,
+                proto.remove.job_id_input
+            ), ""
+        else:
+            return None, "Input not specified"
     else:
         return None, f"Unsupported job type: {proto.Whichoneof('job')}"

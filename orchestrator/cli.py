@@ -70,13 +70,18 @@ def status(ctx: click.Context, id, all):
         async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             response = await stub.JobStatus(orchestrator_pb2.JobStatusRequest(job_id=id))
+        detail_view = False
         if response.status == orchestrator_pb2.JOB_STATUS_PAUSED:
+            detail_view = True
             print(Fore.YELLOW + "PAUSED" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_QUEUED:
+            detail_view = True
             print(Fore.YELLOW + "QUEUED" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_BLOCKED:
+            detail_view = True
             print(Fore.YELLOW + "BLOCKED" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_COMPLETE:
+            detail_view = True
             print(Fore.GREEN + "COMPLETE" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_ERROR:
             print(Fore.RED + "ERROR" + Style.RESET_ALL)
@@ -84,8 +89,17 @@ def status(ctx: click.Context, id, all):
             print(Fore.RED + "CANCELED" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_INVALID:
             print(Fore.RED + "INVALID" + Style.RESET_ALL)
-        if response.message:
-            print(response.message)
+        if detail_view:
+            print(f"  Command:  {response.exec}")
+            print(f"  Priority: {response.priority}")
+            print(f"  Blockers: {response.blockers}")
+            print(f"  Children: {response.spawned_children}")
+            print(f"  Message:  {response.message}")
+            print("  Outputs: ")
+            for output in response.outputs:
+                print(f"    -> {output}")
+            
+        
     async def status_all_impl():
         async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
@@ -161,10 +175,10 @@ def mp4(ctx: click.Context, input, output, blocker, priority):
                     )
                 ))
         if response.success:
-            print(Fore.GREEN + "Job ID" + Style.RESET_ALL + f": {response.job_id}")
+            print(response.job_id)
         else:
             print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
-    asyncio.run(cmd_impl(input, output, priority, blocker))
+    asyncio.run(cmd_impl(input, output, priority, list(blocker)))
 
 @cli.command()
 @click.pass_context
@@ -212,10 +226,10 @@ def mp4_unite(ctx: click.Context, input, output, blocker, priority):
                 )
             ))
         if response.success:
-            print(Fore.GREEN + "Job ID" + Style.RESET_ALL + f": {response.job_id}")
+            print(response.job_id)
         else:
             print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
-    asyncio.run(cmd_impl(input, output, priority, blocker))
+    asyncio.run(cmd_impl(input, output, priority, list(blocker)))
 
 @cli.command()
 @click.pass_context
@@ -262,10 +276,101 @@ def scrape(ctx: click.Context, url, xpath, ext, output, blocker, priority):
                 )
             ))
         if response.success:
-            print(Fore.GREEN + "Job ID" + Style.RESET_ALL + f": {response.job_id}")
+            print(response.job_id)
         else:
             print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
-    asyncio.run(cmd_impl(url, xpath, ext, output, priority, blocker))
+    asyncio.run(cmd_impl(url, xpath, ext, output, priority, list(blocker)))
+
+@cli.command()
+@click.pass_context
+@click.argument(
+    "path"
+)
+@click.option(
+    "--ext",
+    type=str,
+    help="File extension to filter the listing"
+)
+@click.option(
+    "-b",
+    "--blocker",
+    type=int,
+    multiple=True,
+    help="Job ID(s) to block on"
+)
+@click.option(
+    "--priority",
+    "priority",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Priority level for the job"
+)
+def listing(ctx: click.Context, path, ext, blocker, priority):
+    """Kickoff a listing job"""
+    async def cmd_impl(path, ext, pri, blk):
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
+                priority=pri,
+                blocking_job_ids=blk,
+                list=orchestrator_pb2.ListJob(
+                    path=path,
+                    file_extension=ext
+                )
+            ))
+        if response.success:
+            print(response.job_id)
+        else:
+            print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
+    asyncio.run(cmd_impl(path, ext, priority, list(blocker)))
+
+@cli.command()
+@click.pass_context
+@click.argument(
+    "input"
+)
+@click.option(
+    "-b",
+    "--blocker",
+    type=int,
+    multiple=True,
+    help="Job ID(s) to block on"
+)
+@click.option(
+    "--priority",
+    "priority",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Priority level for the job"
+)
+def remove(ctx: click.Context, input, blocker, priority):
+    """Kickoff a removal job"""
+    async def cmd_impl(inp, pri, blk):
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            if inp.isnumeric():
+                response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
+                    priority=pri,
+                    blocking_job_ids=blk + [int(inp)],
+                    remove=orchestrator_pb2.RemoveJob(
+                        job_id_input=int(inp)
+                    )
+                ))
+            else:
+                response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
+                    priority=pri,
+                    blocking_job_ids=blk,
+                    remove=orchestrator_pb2.RemoveJob(
+                        input_path=inp
+                    )
+                ))
+        if response.success:
+            print(response.job_id)
+        else:
+            print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
+    asyncio.run(cmd_impl(input, priority, list(blocker)))
 
 def main():
     cli()

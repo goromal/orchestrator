@@ -1,6 +1,7 @@
 import click
 import logging
 import asyncio
+import queue
 from grpc import aio
 
 from aapis.orchestrator.v1 import (
@@ -22,7 +23,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
 
         self._jobs = {}
         self._completed_jobs = {}
-        self._errored_jobs = []
+        self._errored_jobs = {}
         self._canceled_jobs = []
 
         self._paused = False
@@ -46,8 +47,11 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 if i != -1 and len(self._jobs.values()) > 0:
                     # Determine the next job to slot into free thread i TODO make sorted_queued_candidates a function that JobsStatusResponse calls into as well
                     candidates = [(job.priority, job.id) for job in self._jobs.values() if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_QUEUED]
-                    sorted_candidates = sorted(candidates, key=lambda x: (x[0], x[1]))
-                    self._current_jobs[i] = sorted_candidates[0][1]
+                    if len(candidates) > 0:
+                        sorted_candidates = sorted(candidates, key=lambda x: (x[0], x[1]))
+                        selected_job_id = sorted_candidates[0][1]
+                        logging.info(f"Activating Job ID {selected_job_id} on Thread {i}")
+                        self._current_jobs[i] = selected_job_id
             await asyncio.sleep(1.0)
     
     async def executor_thread(self, idx):
@@ -59,31 +63,66 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                     stdout, stderr = await self._jobs[job_id].execute()
                     if stderr:
                         logging.warn(f"Job ID {job_id} ended with an error: {stderr.decode()}")
-                        self._errored_jobs.append(job_id)
+                        self._errored_jobs[job_id] = self._jobs[job_id]
+                        self._errored_jobs[job_id].msg = stderr.decode()
                         del self._jobs[job_id]
+                        job_ids_to_delete = []
                         for jid, job in self._jobs.items():
                             if job_id in job.blockers:
                                 logging.warn(f"Canceling Job ID {jid}, which was dependent on Job ID {job_id}")
-                                del self._jobs[jid]
+                                job_ids_to_delete.append(jid)
                                 self._canceled_jobs.append(jid)
+                        for job_id_to_delete in job_ids_to_delete:
+                            del self._jobs[job_id_to_delete]
                     else:
                         logging.info(f"Job ID {job_id} completed successfully")
-                        self._completed_jobs[job_id] = self._jobs[job_id]
-                        self._completed_jobs[job_id].outputs = await self._jobs[job_id].getOutputs(stdout)
-                        del self._jobs[job_id]
-                        for job in self._jobs.values():
-                            for completed_job in self._completed_jobs.values():
-                                await job.removeBlocker(completed_job)
-                            if job.hasChildren() and job.status == orchestrator_pb2.JobStatus.JOB_STATUS_COMPLETE:
-                                for child in job.getChildren():
-                                    await self.add_job(child)
-                                self._completed_jobs[job.id] = job
-                                del self._jobs[job.id]
+                        
+                        # Capture output for the original completed job
+                        job = self._jobs[job_id]
+                        job.status = orchestrator_pb2.JobStatus.JOB_STATUS_COMPLETE
+                        job.outputs = await job.getOutputs(stdout.decode())
+                        
+                        # Completed job queue
+                        completed_queue = queue.Queue()
+                        completed_queue.put(job)
+
+                        # Not sure if there's a better way to do this given how removeBlocker works;
+                        # add all previously completed jobs
+                        for completed_job in self._completed_jobs.values():
+                            completed_queue.put(completed_job)
+
+                        # Process all queued completed jobs
+                        while not completed_queue.empty():
+                            popped_job = completed_queue.get()
+                            
+                            # Add completed job children if they exist and give them IDs (if they don't have them)
+                            if popped_job.hasChildren():
+                                for child in popped_job.getChildren():
+                                    if child.id == -1:
+                                        await self.add_job(child)
+                            
+                            # Cycle through all dependent jobs
+                            dependent_jobs = [dep_job for dep_job in self._jobs.values() if popped_job.id in dep_job.blockers]
+                            for dependent_job in dependent_jobs:
+                                transitioned = await dependent_job.removeBlocker(popped_job)
+                                if dependent_job.hasChildren():
+                                    for child in dependent_job.getChildren():
+                                        if child.id == -1:
+                                            await self.add_job(child)
+                                if transitioned and dependent_job.status == orchestrator_pb2.JobStatus.JOB_STATUS_COMPLETE:
+                                    completed_queue.put(dependent_job)
+
+                            # Transfer the completed job
+                            if popped_job.id not in self._completed_jobs:
+                                self._completed_jobs[popped_job.id] = popped_job
+                                del self._jobs[popped_job.id]
+
                     self._current_jobs[idx] = None
             await asyncio.sleep(1.0)
     
     async def add_job(self, job):
         job.id = self._job_counter
+        logging.debug(f"Adding Job ID {job.id} to the queue")
         self._jobs[self._job_counter] = job
         self._job_counter += 1
     
@@ -104,20 +143,36 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
     
     async def JobStatus(self, request, context):
         if request.job_id in self._jobs:
+            job = self._jobs[request.job_id]
             return orchestrator_pb2.JobStatusResponse(
-                status=self._jobs[request.job_id].status,
+                status=job.status,
+                exec=" ".join(job.exec),
+                priority=job.priority,
+                blockers=job.blockers,
+                outputs=job.outputs if job.outputs is not None else "",
+                spawned_children=[],
                 message=""
             )
-        elif request.job_id in self._completed_jobs.keys():
+        elif request.job_id in self._completed_jobs:
+            job = self._completed_jobs[request.job_id]
             return orchestrator_pb2.JobStatusResponse(
                 status=orchestrator_pb2.JobStatus.JOB_STATUS_COMPLETE,
-                message="",
-                spawned_children=[job.id for job in self._completed_jobs[request.job_id].getChildren()]
+                exec=" ".join(job.exec),
+                priority=job.priority,
+                blockers=[],
+                outputs=job.outputs if job.outputs is not None else "",
+                spawned_children=[child.id for child in job.getChildren()],
+                message=""
             )
         elif request.job_id in self._errored_jobs:
             return orchestrator_pb2.JobStatusResponse(
                 status=orchestrator_pb2.JobStatus.JOB_STATUS_ERROR,
-                message=""
+                exec=" ".join(job.exec),
+                priority=job.priority,
+                blockers=job.blockers,
+                outputs="",
+                spawned_children=[],
+                message=job.msg
             )
         elif request.job_id in self._canceled_jobs:
             return orchestrator_pb2.JobStatusResponse(
@@ -135,7 +190,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
         active_jobs = [job.id for job in self._jobs.values() if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_ACTIVE]
         blocked_jobs = [job.id for job in self._jobs.values() if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_BLOCKED]
         paused_jobs = [job.id for job in self._jobs.values() if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_PAUSED]
-        discarded_jobs = self._errored_jobs + self._canceled_jobs
+        discarded_jobs = list(self._errored_jobs.keys()) + self._canceled_jobs
         return orchestrator_pb2.JobsSummaryStatusResponse(
             num_completed_jobs=len(self._completed_jobs.keys()),
             completed_jobs=self._completed_jobs.keys(),
