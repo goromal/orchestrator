@@ -68,7 +68,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                         del self._jobs[job_id]
                         job_ids_to_delete = []
                         for jid, job in self._jobs.items():
-                            if job_id in job.blockers:
+                            if job_id in job.blockers or job_id in job.child_blockers:
                                 logging.warn(f"Canceling Job ID {jid}, which was dependent on Job ID {job_id}")
                                 job_ids_to_delete.append(jid)
                                 self._canceled_jobs.append(jid)
@@ -102,7 +102,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                                         await self.add_job(child)
                             
                             # Cycle through all dependent jobs
-                            dependent_jobs = [dep_job for dep_job in self._jobs.values() if popped_job.id in dep_job.blockers]
+                            dependent_jobs = [dep_job for dep_job in self._jobs.values() if popped_job.id in dep_job.blockers or popped_job.id in dep_job.child_blockers]
                             for dependent_job in dependent_jobs:
                                 transitioned = await dependent_job.removeBlocker(popped_job)
                                 if dependent_job.hasChildren():
@@ -148,7 +148,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 status=job.status,
                 exec=" ".join(job.exec),
                 priority=job.priority,
-                blockers=job.blockers,
+                blockers=job.blockers + job.child_blockers,
                 outputs=job.outputs if job.outputs is not None else "",
                 spawned_children=[],
                 message=""
@@ -165,11 +165,12 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 message=""
             )
         elif request.job_id in self._errored_jobs:
+            job = self._errored_jobs[request.job_id]
             return orchestrator_pb2.JobStatusResponse(
                 status=orchestrator_pb2.JobStatus.JOB_STATUS_ERROR,
                 exec=" ".join(job.exec),
                 priority=job.priority,
-                blockers=job.blockers,
+                blockers=job.blockers + job.child_blockers,
                 outputs="",
                 spawned_children=[],
                 message=job.msg

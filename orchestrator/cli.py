@@ -8,32 +8,9 @@ from aapis.orchestrator.v1 import (
     orchestrator_pb2
 )
 
+
 DEFAULT_INSECURE_PORT = 40040
 
-class NotRequiredIf(click.Option):
-    def __init__(self, *args, **kwargs):
-        self.not_required_if = kwargs.pop('not_required_if')
-        assert self.not_required_if, "'not_required_if' parameter required"
-        kwargs['help'] = (kwargs.get('help', '') +
-            ' NOTE: This argument is mutually exclusive with %s' %
-            self.not_required_if
-        ).strip()
-        super(NotRequiredIf, self).__init__(*args, **kwargs)
-
-    def handle_parse_result(self, ctx, opts, args):
-        we_are_present = self.name in opts
-        other_present = self.not_required_if in opts
-
-        if other_present:
-            if we_are_present:
-                raise click.UsageError(
-                    "Illegal usage: `%s` is mutually exclusive with `%s`" % (
-                        self.name, self.not_required_if))
-            else:
-                self.prompt = None
-
-        return super(NotRequiredIf, self).handle_parse_result(
-            ctx, opts, args)
 
 @click.group()
 @click.pass_context
@@ -49,23 +26,11 @@ def cli(ctx: click.Context, port):
 
 @cli.command()
 @click.pass_context
-@click.option(
-    "--id",
-    "id",
-    type=int,
-    default=None,
-    help="Job ID"
+@click.argument(
+    "target"
 )
-@click.option(
-    "--all",
-    "all",
-    is_flag=True,
-    cls=NotRequiredIf,
-    not_required_if="id",
-    help="Get status for all jobs"
-)
-def status(ctx: click.Context, id, all):
-    """Get the status of orchestrated jobs"""
+def status(ctx: click.Context, target):
+    """Get the status of orchestrated jobs (TARGET ∈ [all, [id], count-complete, count-pending, count-discarded])"""
     async def status_impl(id):
         async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
@@ -84,22 +49,21 @@ def status(ctx: click.Context, id, all):
             detail_view = True
             print(Fore.GREEN + "COMPLETE" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_ERROR:
-            print(Fore.RED + "ERROR" + Style.RESET_ALL)
+            print(Fore.RED + "ERROR" + Style.RESET_ALL + f": {response.message}")
         elif response.status == orchestrator_pb2.JOB_STATUS_CANCELED:
             print(Fore.RED + "CANCELED" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_INVALID:
-            print(Fore.RED + "INVALID" + Style.RESET_ALL)
+            print(Fore.RED + "INVALID" + Style.RESET_ALL + f": {response.message}")
         if detail_view:
-            print(f"  Command:  {response.exec}")
-            print(f"  Priority: {response.priority}")
-            print(f"  Blockers: {response.blockers}")
-            print(f"  Children: {response.spawned_children}")
-            print(f"  Message:  {response.message}")
-            print("  Outputs: ")
+            print(Fore.CYAN + "  Command:  " + Style.RESET_ALL + response.exec)
+            print(Fore.CYAN + "  Priority: " + Style.RESET_ALL + str(response.priority))
+            print(Fore.CYAN + "  Blockers: " + Style.RESET_ALL + str(response.blockers))
+            print(Fore.CYAN + "  Children: " + Style.RESET_ALL + str(response.spawned_children))
+            print(Fore.CYAN + "  Message:  " + Style.RESET_ALL + response.message)
+            print(Fore.CYAN + "  Outputs: " + Style.RESET_ALL)
             for output in response.outputs:
-                print(f"    -> {output}")
+                print(Fore.CYAN + "    -> " + Style.RESET_ALL + output)
             
-        
     async def status_all_impl():
         async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
@@ -123,10 +87,37 @@ def status(ctx: click.Context, id, all):
         print(Fore.RED + "  Discarded" + Style.RESET_ALL + f":\t{response.num_discarded_jobs}")
         if response.num_discarded_jobs > 0:
             print("    [" +  " ".join([str(job) for job in response.discarded_jobs]) + "]")
-    if id is not None:
-        asyncio.run(status_impl(id))
-    else:
+    
+    async def count_complete_impl():
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            response = await stub.JobsSummaryStatus(orchestrator_pb2.JobsSummaryStatusRequest())
+        print(response.num_completed_jobs)
+    
+    async def count_pending_impl():
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            response = await stub.JobsSummaryStatus(orchestrator_pb2.JobsSummaryStatusRequest())
+        print(response.num_active_jobs + response.num_queued_jobs + response.num_blocked_jobs + response.num_paused_jobs)
+    
+    async def count_discarded_impl():
+        async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            response = await stub.JobsSummaryStatus(orchestrator_pb2.JobsSummaryStatusRequest())
+        print(response.num_discarded_jobs)
+
+    if target.isnumeric():
+        asyncio.run(status_impl(int(target)))
+    elif target == "all":
         asyncio.run(status_all_impl())
+    elif target == "count-complete":
+        asyncio.run(count_complete_impl())
+    elif target == "count-pending":
+        asyncio.run(count_pending_impl())
+    elif target == "count-discarded":
+        asyncio.run(count_discarded_impl())
+    else:
+        print(Fore.RED + "ERROR" + Style.RESET_ALL + f": undefined status target ({target})")
 
 @cli.command()
 @click.pass_context
@@ -159,7 +150,7 @@ def mp4(ctx: click.Context, input, output, blocker, priority):
             if inp.isnumeric():
                 response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
                     priority=pri,
-                    blocking_job_ids=blk + [int(inp)],
+                    blocking_job_ids=blk,
                     mp4=orchestrator_pb2.Mp4Job(
                         job_id_input=int(inp),
                         output_path=out
@@ -218,7 +209,7 @@ def mp4_unite(ctx: click.Context, input, output, blocker, priority):
                     input_paths.append(cmd_inp)
             response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
                 priority=pri,
-                blocking_job_ids=blk + input_job_ids,
+                blocking_job_ids=blk,
                 mp4_unite=orchestrator_pb2.Mp4UniteJob(
                     input_paths=input_paths,
                     job_id_inputs=input_job_ids,
@@ -353,7 +344,7 @@ def remove(ctx: click.Context, input, blocker, priority):
             if inp.isnumeric():
                 response = await stub.KickoffJob(orchestrator_pb2.KickoffJobRequest(
                     priority=pri,
-                    blocking_job_ids=blk + [int(inp)],
+                    blocking_job_ids=blk,
                     remove=orchestrator_pb2.RemoveJob(
                         job_id_input=int(inp)
                     )
