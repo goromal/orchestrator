@@ -89,11 +89,15 @@ class Job(object):
         return self.children
 
 class Mp4Job(Job):
-    def __init__(self, priority, blockers, input_path, input_id, output_path):
+    def __init__(self, priority, blockers, input_path, input_id, output_path, mute=False):
         self.output_path = output_path
         self.child_counter = 0
+        self.mute = mute
         if input_id is None:
-            exec = ["mp4", input_path, self.output_path]
+            if self.mute:
+                exec = ["mp4", "-m", input_path, self.output_path]
+            else:
+                exec = ["mp4", input_path, self.output_path]
         else:
             # not ready
             exec = ["mp4__uninitialized"]
@@ -112,7 +116,8 @@ class Mp4Job(Job):
                         self.blockers[:],
                         output,
                         None,
-                        f"{self.output_path.replace('.mp4', '')}_{self.child_counter}.mp4"
+                        f"{self.output_path.replace('.mp4', '')}_{self.child_counter}.mp4",
+                        self.mute
                     ))
                     self.child_counter += 1
 
@@ -191,7 +196,8 @@ def jobFromProto(proto):
                 list(proto.blocking_job_ids),
                 proto.mp4.input_path,
                 None,
-                proto.mp4.output_path
+                proto.mp4.output_path,
+                proto.mp4.mute
             ), ""
         elif proto.mp4.WhichOneof("input") == "job_id_input":
             return Mp4Job(
@@ -199,7 +205,8 @@ def jobFromProto(proto):
                 list(proto.blocking_job_ids),
                 None,
                 proto.mp4.job_id_input,
-                proto.mp4.output_path
+                proto.mp4.output_path,
+                proto.mp4.mute
             ), ""
         else:
             return None, "Input not specified"

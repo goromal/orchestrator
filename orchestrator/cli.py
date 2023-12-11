@@ -128,6 +128,14 @@ def status(ctx: click.Context, target):
     "output"
 )
 @click.option(
+    "--mute",
+    "mute",
+    type=bool,
+    default=False,
+    show_default=True,
+    help="Whether to mute the output",
+)
+@click.option(
     "-b",
     "--blocker",
     type=int,
@@ -142,7 +150,7 @@ def status(ctx: click.Context, target):
     show_default=True,
     help="Priority level for the job"
 )
-def mp4(ctx: click.Context, input, output, blocker, priority):
+def mp4(ctx: click.Context, input, output, mute, blocker, priority):
     """Kickoff an mp4 job"""
     async def cmd_impl(inp, out, pri, blk):
         async with aio.insecure_channel(f"localhost:{ctx.obj['insecure_port']}") as channel:
@@ -153,7 +161,8 @@ def mp4(ctx: click.Context, input, output, blocker, priority):
                     blocking_job_ids=blk,
                     mp4=orchestrator_pb2.Mp4Job(
                         job_id_input=int(inp),
-                        output_path=out
+                        output_path=out,
+                        mute=mute
                     )
                 ))
             else:
@@ -162,7 +171,8 @@ def mp4(ctx: click.Context, input, output, blocker, priority):
                     blocking_job_ids=blk,
                     mp4=orchestrator_pb2.Mp4Job(
                         input_path=inp,
-                        output_path=out
+                        output_path=out,
+                        mute=mute
                     )
                 ))
         if response.success:
