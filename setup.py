@@ -14,5 +14,10 @@ setup(
     author_email=about["__author_email__"],
     packages=find_packages(),
     include_package_data=True,
-    entry_points={"console_scripts":["orchestrator=orchestrator.cli:main", "orchestratord=orchestrator.daemon:main"]},
+    entry_points={
+        "console_scripts": [
+            "orchestrator=orchestrator.cli:main",
+            "orchestratord=orchestrator.daemon:main",
+        ]
+    },
 )

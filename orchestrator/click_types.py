@@ -4,6 +4,7 @@ from collections.abc import Mapping
 
 __all__ = ["LogLevel", "LogLevelType"]
 
+
 class LogLevel(click.ParamType):
     """
     A Click parameter type that accepts the standard logging level names (case
