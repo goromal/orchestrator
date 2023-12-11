@@ -26,7 +26,7 @@ def cli(ctx: click.Context, port):
 @click.pass_context
 @click.argument("target")
 def status(ctx: click.Context, target):
-    """Get the status of orchestrated jobs (TARGET ∈ [all, [id], count-complete, count-pending, count-discarded])"""
+    """Get the status of orchestrated jobs (TARGET ∈ [all, [id], count-complete / cc, count-pending / cp, count-discarded / cd])"""
 
     async def status_impl(id):
         async with aio.insecure_channel(
@@ -206,11 +206,11 @@ def status(ctx: click.Context, target):
         asyncio.run(status_impl(int(target)))
     elif target == "all":
         asyncio.run(status_all_impl())
-    elif target == "count-complete":
+    elif target == "count-complete" or target == "cc":
         asyncio.run(count_complete_impl())
-    elif target == "count-pending":
+    elif target == "count-pending" or target == "cp":
         asyncio.run(count_pending_impl())
-    elif target == "count-discarded":
+    elif target == "count-discarded" or target == "cd":
         asyncio.run(count_discarded_impl())
     else:
         print(
