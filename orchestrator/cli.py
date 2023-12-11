@@ -33,9 +33,17 @@ def status(ctx: click.Context, target):
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            response = await stub.JobStatus(
-                orchestrator_pb2.JobStatusRequest(job_id=id)
-            )
+            try:
+                response = await stub.JobStatus(
+                    orchestrator_pb2.JobStatusRequest(job_id=id)
+                )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         detail_view = False
         if response.status == orchestrator_pb2.JOB_STATUS_PAUSED:
             detail_view = True
@@ -75,9 +83,17 @@ def status(ctx: click.Context, target):
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            response = await stub.JobsSummaryStatus(
-                orchestrator_pb2.JobsSummaryStatusRequest()
-            )
+            try:
+                response = await stub.JobsSummaryStatus(
+                    orchestrator_pb2.JobsSummaryStatusRequest()
+                )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         print("JOB STATUSES")
         print(
             Fore.GREEN
@@ -132,9 +148,17 @@ def status(ctx: click.Context, target):
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            response = await stub.JobsSummaryStatus(
-                orchestrator_pb2.JobsSummaryStatusRequest()
-            )
+            try:
+                response = await stub.JobsSummaryStatus(
+                    orchestrator_pb2.JobsSummaryStatusRequest()
+                )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         print(response.num_completed_jobs)
 
     async def count_pending_impl():
@@ -142,9 +166,17 @@ def status(ctx: click.Context, target):
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            response = await stub.JobsSummaryStatus(
-                orchestrator_pb2.JobsSummaryStatusRequest()
-            )
+            try:
+                response = await stub.JobsSummaryStatus(
+                    orchestrator_pb2.JobsSummaryStatusRequest()
+                )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         print(
             response.num_active_jobs
             + response.num_queued_jobs
@@ -157,9 +189,17 @@ def status(ctx: click.Context, target):
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            response = await stub.JobsSummaryStatus(
-                orchestrator_pb2.JobsSummaryStatusRequest()
-            )
+            try:
+                response = await stub.JobsSummaryStatus(
+                    orchestrator_pb2.JobsSummaryStatusRequest()
+                )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         print(response.num_discarded_jobs)
 
     if target.isnumeric():
@@ -179,6 +219,45 @@ def status(ctx: click.Context, target):
             + Style.RESET_ALL
             + f": undefined status target ({target})"
         )
+
+
+@cli.command()
+@click.pass_context
+@click.argument("job_id")
+def cancel(ctx: click.Context, job_id):
+    """Cancel an active, queued, or blocked job"""
+
+    async def cmd_impl(job_id):
+        async with aio.insecure_channel(
+            f"localhost:{ctx.obj['insecure_port']}"
+        ) as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            try:
+                response = await stub.CancelJob(
+                    orchestrator_pb2.CancelJobRequest(job_id=job_id)
+                )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
+        if response.success:
+            print(Fore.GREEN + f"Success: job {job_id} canceled" + Style.RESET_ALL)
+        else:
+            print(
+                Fore.RED
+                + f"Commanded failed with message: {response.message}"
+                + Style.RESET_ALL
+            )
+
+    try:
+        job_id = int(job_id)
+    except:
+        print(Fore.RED + f"Mal-formed id: {job_id}" + Style.RESET_ALL)
+        exit()
+    asyncio.run(cmd_impl(job_id))
 
 
 @cli.command()
@@ -211,25 +290,41 @@ def mp4(ctx: click.Context, input, output, mute, blocker, priority):
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             if inp.isnumeric():
-                response = await stub.KickoffJob(
-                    orchestrator_pb2.KickoffJobRequest(
-                        priority=pri,
-                        blocking_job_ids=blk,
-                        mp4=orchestrator_pb2.Mp4Job(
-                            job_id_input=int(inp), output_path=out, mute=mute
-                        ),
+                try:
+                    response = await stub.KickoffJob(
+                        orchestrator_pb2.KickoffJobRequest(
+                            priority=pri,
+                            blocking_job_ids=blk,
+                            mp4=orchestrator_pb2.Mp4Job(
+                                job_id_input=int(inp), output_path=out, mute=mute
+                            ),
+                        )
                     )
-                )
+                except:
+                    print(
+                        Fore.RED
+                        + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                        + Style.RESET_ALL
+                    )
+                    exit()
             else:
-                response = await stub.KickoffJob(
-                    orchestrator_pb2.KickoffJobRequest(
-                        priority=pri,
-                        blocking_job_ids=blk,
-                        mp4=orchestrator_pb2.Mp4Job(
-                            input_path=inp, output_path=out, mute=mute
-                        ),
+                try:
+                    response = await stub.KickoffJob(
+                        orchestrator_pb2.KickoffJobRequest(
+                            priority=pri,
+                            blocking_job_ids=blk,
+                            mp4=orchestrator_pb2.Mp4Job(
+                                input_path=inp, output_path=out, mute=mute
+                            ),
+                        )
                     )
-                )
+                except:
+                    print(
+                        Fore.RED
+                        + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                        + Style.RESET_ALL
+                    )
+                    exit()
         if response.success:
             print(response.job_id)
         else:
@@ -266,17 +361,25 @@ def mp4_unite(ctx: click.Context, input, output, blocker, priority):
                     input_job_ids.append(int(cmd_inp))
                 else:
                     input_paths.append(cmd_inp)
-            response = await stub.KickoffJob(
-                orchestrator_pb2.KickoffJobRequest(
-                    priority=pri,
-                    blocking_job_ids=blk,
-                    mp4_unite=orchestrator_pb2.Mp4UniteJob(
-                        input_paths=input_paths,
-                        job_id_inputs=input_job_ids,
-                        output_path=out,
-                    ),
+            try:
+                response = await stub.KickoffJob(
+                    orchestrator_pb2.KickoffJobRequest(
+                        priority=pri,
+                        blocking_job_ids=blk,
+                        mp4_unite=orchestrator_pb2.Mp4UniteJob(
+                            input_paths=input_paths,
+                            job_id_inputs=input_job_ids,
+                            output_path=out,
+                        ),
+                    )
                 )
-            )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         if response.success:
             print(response.job_id)
         else:
@@ -308,15 +411,23 @@ def scrape(ctx: click.Context, url, xpath, ext, output, blocker, priority):
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            response = await stub.KickoffJob(
-                orchestrator_pb2.KickoffJobRequest(
-                    priority=pri,
-                    blocking_job_ids=blk,
-                    scrape=orchestrator_pb2.ScrapeJob(
-                        url=url, xpath=xpath, output_path=output, file_extension=ext
-                    ),
+            try:
+                response = await stub.KickoffJob(
+                    orchestrator_pb2.KickoffJobRequest(
+                        priority=pri,
+                        blocking_job_ids=blk,
+                        scrape=orchestrator_pb2.ScrapeJob(
+                            url=url, xpath=xpath, output_path=output, file_extension=ext
+                        ),
+                    )
                 )
-            )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         if response.success:
             print(response.job_id)
         else:
@@ -346,13 +457,21 @@ def listing(ctx: click.Context, path, ext, blocker, priority):
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            response = await stub.KickoffJob(
-                orchestrator_pb2.KickoffJobRequest(
-                    priority=pri,
-                    blocking_job_ids=blk,
-                    list=orchestrator_pb2.ListJob(path=path, file_extension=ext),
+            try:
+                response = await stub.KickoffJob(
+                    orchestrator_pb2.KickoffJobRequest(
+                        priority=pri,
+                        blocking_job_ids=blk,
+                        list=orchestrator_pb2.ListJob(path=path, file_extension=ext),
+                    )
                 )
-            )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
         if response.success:
             print(response.job_id)
         else:
@@ -382,21 +501,37 @@ def remove(ctx: click.Context, input, blocker, priority):
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             if inp.isnumeric():
-                response = await stub.KickoffJob(
-                    orchestrator_pb2.KickoffJobRequest(
-                        priority=pri,
-                        blocking_job_ids=blk,
-                        remove=orchestrator_pb2.RemoveJob(job_id_input=int(inp)),
+                try:
+                    response = await stub.KickoffJob(
+                        orchestrator_pb2.KickoffJobRequest(
+                            priority=pri,
+                            blocking_job_ids=blk,
+                            remove=orchestrator_pb2.RemoveJob(job_id_input=int(inp)),
+                        )
                     )
-                )
+                except:
+                    print(
+                        Fore.RED
+                        + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                        + Style.RESET_ALL
+                    )
+                    exit()
             else:
-                response = await stub.KickoffJob(
-                    orchestrator_pb2.KickoffJobRequest(
-                        priority=pri,
-                        blocking_job_ids=blk,
-                        remove=orchestrator_pb2.RemoveJob(input_path=inp),
+                try:
+                    response = await stub.KickoffJob(
+                        orchestrator_pb2.KickoffJobRequest(
+                            priority=pri,
+                            blocking_job_ids=blk,
+                            remove=orchestrator_pb2.RemoveJob(input_path=inp),
+                        )
                     )
-                )
+                except:
+                    print(
+                        Fore.RED
+                        + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                        + Style.RESET_ALL
+                    )
+                    exit()
         if response.success:
             print(response.job_id)
         else:
