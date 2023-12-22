@@ -232,6 +232,9 @@ class RemoveJob(Job):
                         RemoveJob(self.priority, self.blockers[:], output, None)
                     )
 
+class BashJob(Job):
+    def __init__(self, priority, blockers, bash_command):
+        super(BashJob, self).__init__(priority, blockers, [], bash_command.split())
 
 def jobFromProto(proto):
     if proto.WhichOneof("job") == "mp4":
@@ -319,5 +322,14 @@ def jobFromProto(proto):
             )
         else:
             return None, "Input not specified"
+    elif proto.WhichOneof("job") == "bash":
+        return (
+            BashJob(
+                proto.priority,
+                list(proto.blocking_job_ids),
+                proto.bash.bash_command,
+            ),
+            "",
+        )
     else:
         return None, f"Unsupported job type: {proto.Whichoneof('job')}"
