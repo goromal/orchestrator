@@ -327,7 +327,7 @@ def jobFromProto(proto):
             BashJob(
                 proto.priority,
                 list(proto.blocking_job_ids),
-                proto.bash_command,
+                proto.bash.bash_command,
             ),
             "",
         )
