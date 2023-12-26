@@ -31,13 +31,17 @@ class Job(object):
 
     async def execute(self):
         logging.debug(f"Executing command `{' '.join(self.exec)}`")
-        proc = await asyncio.create_subprocess_exec(
-            *self.exec,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        # TODO handle sudo
-        stdout, stderr = await proc.communicate()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *self.exec,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            # TODO handle sudo
+            stdout, stderr = await proc.communicate()
+        except Exception as e:
+            stdout = None
+            stderr = f"{e}".encode()
         return stdout, stderr
 
     async def getOutputs(self, stdout):
