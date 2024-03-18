@@ -190,6 +190,25 @@ class ScrapeJob(Job):
         return re.findall(r"-> (\S+)\.\.\.", stdout)
 
 
+class BookNotesSyncJob(Job):
+    def __init__(self, priority, blockers, docs_id, wiki_id):
+        super(BookNotesSyncJob, self).__init__(
+            priority,
+            blockers,
+            [],
+            [
+                "book-notes-sync",
+                "sync",
+                "--docs-id",
+                docs_id,
+                "--page-id",
+                wiki_id,
+                "--enable-logging",
+                "0"
+            ],
+        )
+
+
 class ListJob(Job):
     def __init__(self, priority, blockers, path, file_ext):
         self.path = path
@@ -332,6 +351,16 @@ def jobFromProto(proto):
                 proto.priority,
                 list(proto.blocking_job_ids),
                 proto.bash.bash_command,
+            ),
+            "",
+        )
+    elif proto.WhichOneof("job") == "book_notes_sync":
+        return (
+            BookNotesSyncJob(
+                proto.priority,
+                list(proto.blocking_job_ids),
+                proto.book_notes_sync.docs_id,
+                proto.book_notes_sync.wiki_page_id,
             ),
             "",
         )
