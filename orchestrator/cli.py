@@ -608,7 +608,7 @@ def sync(ctx: click.Context, cloud_dir, blocker, priority):
                     orchestrator_pb2.KickoffJobRequest(
                         priority=pri,
                         blocking_job_ids=blk,
-                        bash=orchestrator_pb2.SyncJob(cloud_dir=cloud_dir),
+                        sync=orchestrator_pb2.SyncJob(cloud_dir=cloud_dir),
                     )
                 )
             except:
