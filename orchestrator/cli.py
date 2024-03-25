@@ -583,6 +583,49 @@ def bash(ctx: click.Context, command, blocker, priority):
     asyncio.run(cmd_impl(command, priority, list(blocker)))
 
 
+@cli.command()
+@click.pass_context
+@click.argument("cloud_dir")
+@click.option("-b", "--blocker", type=int, multiple=True, help="Job ID(s) to block on")
+@click.option(
+    "--priority",
+    "priority",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Priority level for the job",
+)
+def sync(ctx: click.Context, cloud_dir, blocker, priority):
+    """Kickoff a sync job"""
+
+    async def cmd_impl(cloud_dir, pri, blk):
+        async with aio.insecure_channel(
+            f"localhost:{ctx.obj['insecure_port']}"
+        ) as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            try:
+                response = await stub.KickoffJob(
+                    orchestrator_pb2.KickoffJobRequest(
+                        priority=pri,
+                        blocking_job_ids=blk,
+                        sync=orchestrator_pb2.SyncJob(cloud_dir=cloud_dir),
+                    )
+                )
+            except:
+                print(
+                    Fore.RED
+                    + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                    + Style.RESET_ALL
+                )
+                exit()
+        if response.success:
+            print(response.job_id)
+        else:
+            print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
+
+    asyncio.run(cmd_impl(cloud_dir, priority, list(blocker)))
+
+
 def main():
     cli()
 

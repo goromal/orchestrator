@@ -240,6 +240,10 @@ class BashJob(Job):
     def __init__(self, priority, blockers, bash_command):
         super(BashJob, self).__init__(priority, blockers, [], bash_command.split())
 
+class SyncJob(Job):
+    def __init__(self, priority, blockers, cloud_dir):
+        super(SyncJob, self).__init__(priority, blockers, [], ["rcrsync", "sync", cloud_dir])
+
 def jobFromProto(proto):
     if proto.WhichOneof("job") == "mp4":
         if proto.mp4.WhichOneof("input") == "input_path":
@@ -332,6 +336,15 @@ def jobFromProto(proto):
                 proto.priority,
                 list(proto.blocking_job_ids),
                 proto.bash.bash_command,
+            ),
+            "",
+        )
+    elif proto.WhichOneof("job") == "sync":
+        return (
+            SyncJob(
+                proto.priority,
+                list(proto.blocking_job_ids),
+                proto.sync.cloud_dir,
             ),
             "",
         )
