@@ -77,6 +77,7 @@ def status(ctx: click.Context, target):
                 + str(response.spawned_children)
             )
             print(Fore.CYAN + "  Message:  " + Style.RESET_ALL + response.message)
+            print(Fore.CYAN + "  Duration: " + Style.RESET_ALL + f"{response.exec_duration_secs:.2f}s")
             print(Fore.CYAN + "  Output:  " + Style.RESET_ALL)
             print(response.program_output)
             print(Fore.CYAN + "  Outputs: " + Style.RESET_ALL)

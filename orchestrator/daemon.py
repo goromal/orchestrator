@@ -2,6 +2,7 @@ import click
 import logging
 import asyncio
 import queue
+import time
 from grpc import aio
 
 from aapis.orchestrator.v1 import orchestrator_pb2_grpc, orchestrator_pb2
@@ -68,7 +69,10 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                     self._jobs[
                         job_id
                     ].status = orchestrator_pb2.JobStatus.JOB_STATUS_ACTIVE
+                    start_time = time.time()
                     stdout, stderr = await self._jobs[job_id].execute()
+                    end_time = time.time()
+                    self._jobs[job_id].exec_duration = end_time - start_time
                     if stderr:
                         logging.warn(
                             f"Job ID {job_id} ended with an error: {stderr.decode()}"
@@ -172,7 +176,8 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 outputs=job.outputs if job.outputs is not None else "",
                 spawned_children=[],
                 message="",
-                program_output=job.program_output, # ^^^^ TODO
+                program_output=job.program_output,
+                exec_duration_secs = job.exec_duration,
             )
         elif request.job_id in self._completed_jobs:
             job = self._completed_jobs[request.job_id]
@@ -185,6 +190,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 spawned_children=[child.id for child in job.getChildren()],
                 message="",
                 program_output=job.program_output,
+                exec_duration_secs = job.exec_duration,
             )
         elif request.job_id in self._errored_jobs:
             job = self._errored_jobs[request.job_id]
@@ -197,6 +203,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 spawned_children=[],
                 message=job.msg,
                 program_output=job.program_output,
+                exec_duration_secs = job.exec_duration,
             )
         elif request.job_id in self._canceled_jobs:
             return orchestrator_pb2.JobStatusResponse(
