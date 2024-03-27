@@ -28,6 +28,7 @@ class Job(object):
         self.outputs = None
         self.children = []  # job objects
         self.msg = ""
+        self.program_output = ""
 
     async def execute(self):
         logging.debug(f"Executing command `{' '.join(self.exec)}`")

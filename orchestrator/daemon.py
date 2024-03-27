@@ -93,6 +93,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                         job = self._jobs[job_id]
                         job.status = orchestrator_pb2.JobStatus.JOB_STATUS_COMPLETE
                         job.outputs = await job.getOutputs(stdout.decode())
+                        job.program_output = stdout.decode()
 
                         # Completed job queue
                         completed_queue = queue.Queue()
@@ -171,6 +172,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 outputs=job.outputs if job.outputs is not None else "",
                 spawned_children=[],
                 message="",
+                program_output=job.program_output, # ^^^^ TODO
             )
         elif request.job_id in self._completed_jobs:
             job = self._completed_jobs[request.job_id]
@@ -182,6 +184,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 outputs=job.outputs if job.outputs is not None else "",
                 spawned_children=[child.id for child in job.getChildren()],
                 message="",
+                program_output=job.program_output,
             )
         elif request.job_id in self._errored_jobs:
             job = self._errored_jobs[request.job_id]
@@ -193,6 +196,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 outputs="",
                 spawned_children=[],
                 message=job.msg,
+                program_output=job.program_output,
             )
         elif request.job_id in self._canceled_jobs:
             return orchestrator_pb2.JobStatusResponse(
