@@ -45,7 +45,10 @@ def status(ctx: click.Context, target):
                 )
                 exit()
         detail_view = False
-        if response.status == orchestrator_pb2.JOB_STATUS_PAUSED:
+        if response.status == orchestrator_pb2.JOB_STATUS_ACTIVE:
+            detail_view = True
+            print(Fore.GREEN + "ACTIVE" + Style.RESET_ALL)
+        elif response.status == orchestrator_pb2.JOB_STATUS_PAUSED:
             detail_view = True
             print(Fore.YELLOW + "PAUSED" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_QUEUED:
@@ -74,6 +77,9 @@ def status(ctx: click.Context, target):
                 + str(response.spawned_children)
             )
             print(Fore.CYAN + "  Message:  " + Style.RESET_ALL + response.message)
+            print(Fore.CYAN + "  Duration: " + Style.RESET_ALL + f"{response.exec_duration_secs:.2f}s")
+            print(Fore.CYAN + "  Output:  " + Style.RESET_ALL)
+            print(response.program_output)
             print(Fore.CYAN + "  Outputs: " + Style.RESET_ALL)
             for output in response.outputs:
                 print(Fore.CYAN + "    -> " + Style.RESET_ALL + output)
