@@ -61,6 +61,7 @@ def status(ctx: click.Context, target):
             detail_view = True
             print(Fore.GREEN + "COMPLETE" + Style.RESET_ALL)
         elif response.status == orchestrator_pb2.JOB_STATUS_ERROR:
+            detail_view = True
             print(Fore.RED + "ERROR" + Style.RESET_ALL + f": {response.message}")
         elif response.status == orchestrator_pb2.JOB_STATUS_CANCELED:
             print(Fore.RED + "CANCELED" + Style.RESET_ALL)
