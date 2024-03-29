@@ -244,7 +244,7 @@ class BashJob(Job):
 
 class SyncJob(Job):
     def __init__(self, priority, blockers, cloud_dir):
-        super(SyncJob, self).__init__(priority, blockers, [], ["rcrsync", "sync", cloud_dir])
+        super(SyncJob, self).__init__(priority, blockers, [], ["rcrsync", "-v", "sync", cloud_dir])
 
 def jobFromProto(proto):
     if proto.WhichOneof("job") == "mp4":
