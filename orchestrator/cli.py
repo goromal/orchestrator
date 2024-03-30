@@ -6,20 +6,31 @@ from grpc import aio
 from aapis.orchestrator.v1 import orchestrator_pb2_grpc, orchestrator_pb2
 
 
+DEFAULT_ADDRESS = "localhost"
 DEFAULT_INSECURE_PORT = 40040
+
+
+def _get_channel(ctx: click.Context):
+    return aio.insecure_channel(f"{ctx.obj['address']}:{ctx.obj['insecure_port']}")
 
 
 @click.group()
 @click.pass_context
+@click.option(
+    "-a",
+    "--address",
+    type=str,
+    default=DEFAULT_ADDRESS,
+)
 @click.option(
     "-p",
     "--port",
     type=int,
     default=DEFAULT_INSECURE_PORT,
 )
-def cli(ctx: click.Context, port):
+def cli(ctx: click.Context, address, port):
     """Orchestrate background jobs."""
-    ctx.obj = {"insecure_port": port}
+    ctx.obj = {"address": address, "insecure_port": port}
 
 
 @cli.command()
@@ -29,9 +40,7 @@ def status(ctx: click.Context, target):
     """Get the status of orchestrated jobs (TARGET ∈ [all, [id], count-complete / cc, count-pending / cp, count-discarded / cd])"""
 
     async def status_impl(id):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.JobStatus(
@@ -78,7 +87,12 @@ def status(ctx: click.Context, target):
                 + str(response.spawned_children)
             )
             print(Fore.CYAN + "  Message:  " + Style.RESET_ALL + response.message)
-            print(Fore.CYAN + "  Duration: " + Style.RESET_ALL + f"{response.exec_duration_secs:.2f}s")
+            print(
+                Fore.CYAN
+                + "  Duration: "
+                + Style.RESET_ALL
+                + f"{response.exec_duration_secs:.2f}s"
+            )
             print(Fore.CYAN + "  Output:  " + Style.RESET_ALL)
             print(response.program_output)
             print(Fore.CYAN + "  Outputs: " + Style.RESET_ALL)
@@ -86,9 +100,7 @@ def status(ctx: click.Context, target):
                 print(Fore.CYAN + "    -> " + Style.RESET_ALL + output)
 
     async def status_all_impl():
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.JobsSummaryStatus(
@@ -151,9 +163,7 @@ def status(ctx: click.Context, target):
             )
 
     async def count_complete_impl():
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.JobsSummaryStatus(
@@ -169,9 +179,7 @@ def status(ctx: click.Context, target):
         print(response.num_completed_jobs)
 
     async def count_pending_impl():
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.JobsSummaryStatus(
@@ -192,9 +200,7 @@ def status(ctx: click.Context, target):
         )
 
     async def count_discarded_impl():
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.JobsSummaryStatus(
@@ -235,9 +241,7 @@ def cancel(ctx: click.Context, job_id):
     """Cancel an active, queued, or blocked job"""
 
     async def cmd_impl(job_id):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.CancelJob(
@@ -292,9 +296,7 @@ def mp4(ctx: click.Context, input, output, mute, blocker, priority):
     """Kickoff an mp4 job"""
 
     async def cmd_impl(inp, out, pri, blk):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             if inp.isnumeric():
                 try:
@@ -357,9 +359,7 @@ def mp4_unite(ctx: click.Context, input, output, blocker, priority):
     """Kickoff an mp4 unite job"""
 
     async def cmd_impl(inp, out, pri, blk):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             input_paths = []
             input_job_ids = []
@@ -414,9 +414,7 @@ def scrape(ctx: click.Context, url, xpath, ext, output, blocker, priority):
     """Kickoff a scrape job"""
 
     async def cmd_impl(url, xpath, ext, output, pri, blk):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.KickoffJob(
@@ -460,9 +458,7 @@ def listing(ctx: click.Context, path, ext, blocker, priority):
     """Kickoff a listing job"""
 
     async def cmd_impl(path, ext, pri, blk):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.KickoffJob(
@@ -503,9 +499,7 @@ def remove(ctx: click.Context, input, blocker, priority):
     """Kickoff a removal job"""
 
     async def cmd_impl(inp, pri, blk):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             if inp.isnumeric():
                 try:
@@ -563,9 +557,7 @@ def bash(ctx: click.Context, command, blocker, priority):
     """Kickoff a bash job"""
 
     async def cmd_impl(command, pri, blk):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.KickoffJob(
@@ -606,9 +598,7 @@ def sync(ctx: click.Context, cloud_dir, blocker, priority):
     """Kickoff a sync job"""
 
     async def cmd_impl(cloud_dir, pri, blk):
-        async with aio.insecure_channel(
-            f"localhost:{ctx.obj['insecure_port']}"
-        ) as channel:
+        async with _get_channel(ctx) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             try:
                 response = await stub.KickoffJob(
