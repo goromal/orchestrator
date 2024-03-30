@@ -177,7 +177,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 spawned_children=[],
                 message="",
                 program_output=job.program_output,
-                exec_duration_secs = job.exec_duration,
+                exec_duration_secs=job.exec_duration,
             )
         elif request.job_id in self._completed_jobs:
             job = self._completed_jobs[request.job_id]
@@ -190,7 +190,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 spawned_children=[child.id for child in job.getChildren()],
                 message="",
                 program_output=job.program_output,
-                exec_duration_secs = job.exec_duration,
+                exec_duration_secs=job.exec_duration,
             )
         elif request.job_id in self._errored_jobs:
             job = self._errored_jobs[request.job_id]
@@ -203,7 +203,7 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 spawned_children=[],
                 message=job.msg,
                 program_output=job.program_output,
-                exec_duration_secs = job.exec_duration,
+                exec_duration_secs=job.exec_duration,
             )
         elif request.job_id in self._canceled_jobs:
             return orchestrator_pb2.JobStatusResponse(
