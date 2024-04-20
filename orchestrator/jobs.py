@@ -2,6 +2,7 @@ import asyncio
 import glob
 import logging
 import re
+import os
 
 from aapis.orchestrator.v1 import orchestrator_pb2
 
@@ -141,7 +142,7 @@ class Mp4Job(Job):
                             self.blockers[:],
                             output,
                             None,
-                            f"{output}_{self.output_path.replace('.mp4', '')}_{self.child_counter}{'_mute' if self.mute else ''}.mp4",
+                            f"{os.path.basename(output)}_{self.output_path.replace('.mp4', '')}_{self.child_counter}{'_mute' if self.mute else ''}.mp4",
                             self.mute,
                         )
                     )
