@@ -174,7 +174,8 @@ def status(ctx: click.Context, target):
         if count:
             print(response.num_completed_jobs)
         else:
-            print(" ".join(response.completed_jobs))
+            jobs_str = [str(j) for j in response.completed_jobs]
+            print(" ".join(jobs_str))
 
     async def pending_impl(count=True):
         async with aio.insecure_channel(
@@ -200,14 +201,14 @@ def status(ctx: click.Context, target):
                 + response.num_paused_jobs
             )
         else:
-            print(
-                " ".join(
-                    response.active_jobs
-                    + response.queued_jobs
-                    + response.blocked_jobs
-                    + response.paused_jobs
-                )
+            jobs = (
+                response.active_jobs
+                + response.queued_jobs
+                + response.blocked_jobs
+                + response.paused_jobs
             )
+            jobs_str = [str(j) for j in jobs]
+            print(" ".join(jobs_str))
 
     async def discarded_impl(count=True):
         async with aio.insecure_channel(
@@ -228,7 +229,8 @@ def status(ctx: click.Context, target):
         if count:
             print(response.num_discarded_jobs)
         else:
-            print(" ".join(response.discarded_jobs))
+            jobs_str = [str(j) for j in response.discarded_jobs]
+            print(" ".join(jobs_str))
 
     if target.isnumeric():
         asyncio.run(status_impl(int(target)))
