@@ -142,7 +142,7 @@ class Mp4Job(Job):
                             self.blockers[:],
                             output,
                             None,
-                            f"{os.path.basename(output)}_{self.output_path.replace('.mp4', '')}_{self.child_counter}{'_mute' if self.mute else ''}.mp4",
+                            f"{os.path.dirname(self.output_path)}/{os.path.basename(output)}_{os.path.basename(self.output_path).replace('.mp4', '')}_{self.child_counter}{'_mute' if self.mute else ''}.mp4",
                             self.mute,
                         )
                     )
