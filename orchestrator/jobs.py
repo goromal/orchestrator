@@ -2,6 +2,7 @@ import asyncio
 import glob
 import logging
 import re
+import os
 
 from aapis.orchestrator.v1 import orchestrator_pb2
 
@@ -141,7 +142,7 @@ class Mp4Job(Job):
                             self.blockers[:],
                             output,
                             None,
-                            f"{self.output_path.replace('.mp4', '')}_{self.child_counter}.mp4",
+                            f"{os.path.dirname(self.output_path)}/{os.path.basename(output)}_{os.path.basename(self.output_path).replace('.mp4', '')}_{self.child_counter}{'_mute' if self.mute else ''}.mp4",
                             self.mute,
                         )
                     )
@@ -238,13 +239,18 @@ class RemoveJob(Job):
                         RemoveJob(self.priority, self.blockers[:], output, None)
                     )
 
+
 class BashJob(Job):
     def __init__(self, priority, blockers, bash_command):
         super(BashJob, self).__init__(priority, blockers, [], bash_command.split())
 
+
 class SyncJob(Job):
     def __init__(self, priority, blockers, cloud_dir):
-        super(SyncJob, self).__init__(priority, blockers, [], ["rcrsync", "-v", "sync", cloud_dir])
+        super(SyncJob, self).__init__(
+            priority, blockers, [], ["rcrsync", "-v", "sync", cloud_dir]
+        )
+
 
 def jobFromProto(proto):
     if proto.WhichOneof("job") == "mp4":

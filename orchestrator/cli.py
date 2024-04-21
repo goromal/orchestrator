@@ -26,7 +26,7 @@ def cli(ctx: click.Context, port):
 @click.pass_context
 @click.argument("target")
 def status(ctx: click.Context, target):
-    """Get the status of orchestrated jobs (TARGET ∈ [all, [id], count-complete / cc, count-pending / cp, count-discarded / cd])"""
+    """Get the status of orchestrated jobs (TARGET ∈ [all, [id], get-complete / gc, count-complete / cc, get-pending / gp, count-pending / cp, get-discarded / gd, count-discarded / cd])"""
 
     async def status_impl(id):
         async with aio.insecure_channel(
@@ -78,7 +78,12 @@ def status(ctx: click.Context, target):
                 + str(response.spawned_children)
             )
             print(Fore.CYAN + "  Message:  " + Style.RESET_ALL + response.message)
-            print(Fore.CYAN + "  Duration: " + Style.RESET_ALL + f"{response.exec_duration_secs:.2f}s")
+            print(
+                Fore.CYAN
+                + "  Duration: "
+                + Style.RESET_ALL
+                + f"{response.exec_duration_secs:.2f}s"
+            )
             print(Fore.CYAN + "  Output:  " + Style.RESET_ALL)
             print(response.program_output)
             print(Fore.CYAN + "  Outputs: " + Style.RESET_ALL)
@@ -150,7 +155,7 @@ def status(ctx: click.Context, target):
                 "    [" + " ".join([str(job) for job in response.discarded_jobs]) + "]"
             )
 
-    async def count_complete_impl():
+    async def complete_impl(count=True):
         async with aio.insecure_channel(
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
@@ -166,9 +171,13 @@ def status(ctx: click.Context, target):
                     + Style.RESET_ALL
                 )
                 exit()
-        print(response.num_completed_jobs)
+        if count:
+            print(response.num_completed_jobs)
+        else:
+            jobs_str = [str(j) for j in response.completed_jobs]
+            print(" ".join(jobs_str))
 
-    async def count_pending_impl():
+    async def pending_impl(count=True):
         async with aio.insecure_channel(
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
@@ -184,14 +193,24 @@ def status(ctx: click.Context, target):
                     + Style.RESET_ALL
                 )
                 exit()
-        print(
-            response.num_active_jobs
-            + response.num_queued_jobs
-            + response.num_blocked_jobs
-            + response.num_paused_jobs
-        )
+        if count:
+            print(
+                response.num_active_jobs
+                + response.num_queued_jobs
+                + response.num_blocked_jobs
+                + response.num_paused_jobs
+            )
+        else:
+            jobs = (
+                response.active_jobs
+                + response.queued_jobs
+                + response.blocked_jobs
+                + response.paused_jobs
+            )
+            jobs_str = [str(j) for j in jobs]
+            print(" ".join(jobs_str))
 
-    async def count_discarded_impl():
+    async def discarded_impl(count=True):
         async with aio.insecure_channel(
             f"localhost:{ctx.obj['insecure_port']}"
         ) as channel:
@@ -207,18 +226,28 @@ def status(ctx: click.Context, target):
                     + Style.RESET_ALL
                 )
                 exit()
-        print(response.num_discarded_jobs)
+        if count:
+            print(response.num_discarded_jobs)
+        else:
+            jobs_str = [str(j) for j in response.discarded_jobs]
+            print(" ".join(jobs_str))
 
     if target.isnumeric():
         asyncio.run(status_impl(int(target)))
     elif target == "all":
         asyncio.run(status_all_impl())
+    elif target == "get-complete" or target == "gc":
+        asyncio.run(complete_impl(count=False))
     elif target == "count-complete" or target == "cc":
-        asyncio.run(count_complete_impl())
+        asyncio.run(complete_impl(count=True))
+    elif target == "get-pending" or target == "gp":
+        asyncio.run(pending_impl(count=False))
     elif target == "count-pending" or target == "cp":
-        asyncio.run(count_pending_impl())
+        asyncio.run(pending_impl(True))
+    elif target == "get-discarded" or target == "gd":
+        asyncio.run(discarded_impl(False))
     elif target == "count-discarded" or target == "cd":
-        asyncio.run(count_discarded_impl())
+        asyncio.run(discarded_impl(True))
     else:
         print(
             Fore.RED
