@@ -14,11 +14,28 @@ from orchestrator.jobs import jobFromProto
 DEFAULT_INSECURE_PORT = 40040
 
 
+import statsd
+
 class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
-    def __init__(self, num_allowed_threads):
+    def __init__(self, num_allowed_threads, statsd_port=None):
         self._max_threads = num_allowed_threads
         self._num_threads = 0
         self._job_counter = 0
+
+        if statsd_port is not None:
+            try:
+                statsd_port = int(statsd_port)
+                if 1 <= statsd_port <= 65535:
+                    self._statsd = statsd.StatsClient('localhost', statsd_port)
+                    logging.info(f"StatsD client initialized on port {statsd_port}")
+                else:
+                    logging.warning(f"Invalid StatsD port: {statsd_port}. Port must be between 1 and 65535.")
+                    self._statsd = None
+            except ValueError:
+                logging.warning(f"Invalid StatsD port: {statsd_port}. Must be an integer.")
+                self._statsd = None
+        else:
+            self._statsd = None
 
         self._jobs = {}
         self._completed_jobs = {}
@@ -302,10 +319,10 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
         return orchestrator_pb2.CancelJobResponse(success=success, message=message)
 
 
-async def serve(port, num_allowed_threads):
+async def serve(port, num_allowed_threads, statsd_port=None):
     server = aio.server()
     orchestrator_pb2_grpc.add_OrchestratorServiceServicer_to_server(
-        Orchestrator(num_allowed_threads), server
+        Orchestrator(num_allowed_threads, statsd_port), server
     )
     listen_addr = f"[::]:{port}"
     server.add_insecure_port(listen_addr)
@@ -328,16 +345,22 @@ async def serve(port, num_allowed_threads):
     default=DEFAULT_INSECURE_PORT,
 )
 @click.option(
+    "--statsd-port",
+    type=int,
+    default=None,
+    help="StatsD metrics publish port",
+)
+@click.option(
     "-l",
     "--log-level",
     type=LogLevel(),
     default=logging.INFO,
 )
-def cli(num_allowed_threads, port, log_level):
+def cli(num_allowed_threads, port, statsd_port, log_level):
     """Spawn the Orchestrator daemon."""
     logging.basicConfig(level=log_level)
     logging.info(f"Log level set to {log_level}")
-    asyncio.run(serve(port, num_allowed_threads))
+    asyncio.run(serve(port, num_allowed_threads, statsd_port))
 
 
 def main():
