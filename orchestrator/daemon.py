@@ -42,6 +42,8 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
         self._errored_jobs = {}
         self._canceled_jobs = []
 
+        self._statsd_prefix = "orchestrator"
+
         self._paused = False
 
         self._current_jobs = [None for _ in range(num_allowed_threads)]
@@ -76,6 +78,8 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                             f"Activating Job ID {selected_job_id} on Thread {i}"
                         )
                         self._current_jobs[i] = selected_job_id
+                        if self._statsd:
+                            self._statsd.decr(f"{self._statsd_prefix}.jobs.queued")
             await asyncio.sleep(1.0)
 
     async def executor_thread(self, idx):
@@ -86,16 +90,22 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                     self._jobs[
                         job_id
                     ].status = orchestrator_pb2.JobStatus.JOB_STATUS_ACTIVE
+                    if self._statsd:
+                        self._statsd.incr(f"{self._statsd_prefix}.jobs.active")
                     start_time = time.time()
                     stdout, stderr = await self._jobs[job_id].execute()
                     end_time = time.time()
                     self._jobs[job_id].exec_duration = end_time - start_time
+                    if self._statsd:
+                        self._statsd.timing(f"{self._statsd_prefix}.jobs.execution_time", (end_time - start_time) * 1000) # in ms
                     if stderr:
                         logging.warn(
                             f"Job ID {job_id} ended with an error: {stderr.decode()}"
                         )
                         self._errored_jobs[job_id] = self._jobs[job_id]
                         self._errored_jobs[job_id].msg = stderr.decode()
+                        if self._statsd:
+                            self._statsd.incr(f"{self._statsd_prefix}.jobs.errored")
                         del self._jobs[job_id]
                         job_ids_to_delete = []
                         for jid, job in self._jobs.items():
@@ -105,8 +115,12 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                                 )
                                 job_ids_to_delete.append(jid)
                                 self._canceled_jobs.append(jid)
+                                if self._statsd:
+                                    self._statsd.incr(f"{self._statsd_prefix}.jobs.canceled")
                         for job_id_to_delete in job_ids_to_delete:
                             del self._jobs[job_id_to_delete]
+                            if self._statsd:
+                                self._statsd.decr(f"{self._statsd_prefix}.jobs.queued")
                     else:
                         logging.info(f"Job ID {job_id} completed successfully")
 
@@ -161,8 +175,12 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                             if popped_job.id not in self._completed_jobs:
                                 self._completed_jobs[popped_job.id] = popped_job
                                 del self._jobs[popped_job.id]
+                                if self._statsd:
+                                    self._statsd.incr(f"{self._statsd_prefix}.jobs.completed")
 
                     self._current_jobs[idx] = None
+                    if self._statsd:
+                        self._statsd.decr(f"{self._statsd_prefix}.jobs.active")
             await asyncio.sleep(1.0)
 
     async def add_job(self, job):
@@ -170,6 +188,8 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
         logging.debug(f"Adding Job ID {job.id} to the queue")
         self._jobs[self._job_counter] = job
         self._job_counter += 1
+        if self._statsd:
+            self._statsd.incr(f"{self._statsd_prefix}.jobs.queued")
 
     async def KickoffJob(self, request, context):
         job, msg = jobFromProto(request)
@@ -254,6 +274,15 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
             if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_PAUSED
         ]
         discarded_jobs = list(self._errored_jobs.keys()) + self._canceled_jobs
+
+        if self._statsd:
+            self._statsd.gauge(f"{self._statsd_prefix}.jobs.queued", len(queued_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}.jobs.active", len(active_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}.jobs.blocked", len(blocked_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}.jobs.paused", len(paused_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}.jobs.discarded", len(discarded_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}.jobs.completed", len(self._completed_jobs.keys()))
+
         return orchestrator_pb2.JobsSummaryStatusResponse(
             num_completed_jobs=len(self._completed_jobs.keys()),
             completed_jobs=self._completed_jobs.keys(),
@@ -312,6 +341,8 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
                 self._canceled_jobs.append(id)
                 return True, ""
         else:
+            if self._statsd and id in self._jobs:
+                self._statsd.decr(f"{self._statsd_prefix}.jobs.queued")
             return False, "Job already completed, discarded, or non-existent"
 
     async def CancelJob(self, request, context):
