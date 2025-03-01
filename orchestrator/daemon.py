@@ -350,6 +350,8 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
         return orchestrator_pb2.CancelJobResponse(success=success, message=message)
 
 
+import signal
+
 async def serve(port, num_allowed_threads, statsd_port=None):
     server = aio.server()
     orchestrator_pb2_grpc.add_OrchestratorServiceServicer_to_server(
@@ -359,6 +361,15 @@ async def serve(port, num_allowed_threads, statsd_port=None):
     server.add_insecure_port(listen_addr)
     logging.info(f"Starting orchestrator server on {listen_addr}")
     await server.start()
+
+    async def graceful_shutdown():
+        logging.info("Shutting down server...")
+        await server.stop(5)
+        logging.info("Server stopped.")
+
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(graceful_shutdown()))
+
     await server.wait_for_termination()
 
 
