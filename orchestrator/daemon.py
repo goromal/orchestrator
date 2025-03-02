@@ -87,12 +87,12 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
             return
         while True:
             await self.compute_metrics()
-            self._statsd.gauge(f"{self._statsd_prefix}.jobs.queued", len(self._queued_jobs))
-            self._statsd.gauge(f"{self._statsd_prefix}.jobs.active", len(self._active_jobs))
-            self._statsd.gauge(f"{self._statsd_prefix}.jobs.blocked", len(self._blocked_jobs))
-            self._statsd.gauge(f"{self._statsd_prefix}.jobs.paused", len(self._paused_jobs))
-            self._statsd.gauge(f"{self._statsd_prefix}.jobs.discarded", len(self._discarded_jobs))
-            self._statsd.gauge(f"{self._statsd_prefix}.jobs.completed", len(self._completed_jobs.keys()))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_queued", len(self._queued_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_active", len(self._active_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_blocked", len(self._blocked_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_paused", len(self._paused_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_discarded", len(self._discarded_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_completed", len(self._completed_jobs.keys()))
             await asyncio.sleep(5.0)
 
     async def free_thread(self):
