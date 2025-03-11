@@ -14,16 +14,41 @@ from orchestrator.jobs import jobFromProto
 DEFAULT_INSECURE_PORT = 40040
 
 
+import statsd
+
 class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
-    def __init__(self, num_allowed_threads):
+    def __init__(self, num_allowed_threads, statsd_port=None):
         self._max_threads = num_allowed_threads
         self._num_threads = 0
         self._job_counter = 0
+
+        if statsd_port is not None:
+            try:
+                statsd_port = int(statsd_port)
+                if 1 <= statsd_port <= 65535:
+                    self._statsd = statsd.StatsClient('localhost', statsd_port)
+                    logging.info(f"StatsD client initialized on port {statsd_port}")
+                else:
+                    logging.warning(f"Invalid StatsD port: {statsd_port}. Port must be between 1 and 65535.")
+                    self._statsd = None
+            except ValueError:
+                logging.warning(f"Invalid StatsD port: {statsd_port}. Must be an integer.")
+                self._statsd = None
+        else:
+            self._statsd = None
 
         self._jobs = {}
         self._completed_jobs = {}
         self._errored_jobs = {}
         self._canceled_jobs = []
+
+        self._queued_jobs = []
+        self._active_jobs = []
+        self._blocked_jobs = []
+        self._paused_jobs = []
+        self._discarded_jobs = []
+
+        self._statsd_prefix = "orchestrator"
 
         self._paused = False
 
@@ -32,6 +57,43 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
             asyncio.get_event_loop().create_task(self.executor_thread(i))
 
         asyncio.get_event_loop().create_task(self.update_thread())
+        asyncio.get_event_loop().create_task(self.metrics_publish_thread())
+
+    async def compute_metrics(self):
+        self._queued_jobs = [
+            job.id
+            for job in self._jobs.values()
+            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_QUEUED
+        ]
+        self._active_jobs = [
+            job.id
+            for job in self._jobs.values()
+            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_ACTIVE
+        ]
+        self._blocked_jobs = [
+            job.id
+            for job in self._jobs.values()
+            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_BLOCKED
+        ]
+        self._paused_jobs = [
+            job.id
+            for job in self._jobs.values()
+            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_PAUSED
+        ]
+        self._discarded_jobs = list(self._errored_jobs.keys()) + self._canceled_jobs
+
+    async def metrics_publish_thread(self):
+        if not self._statsd:
+            return
+        while True:
+            await self.compute_metrics()
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_queued", len(self._queued_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_active", len(self._active_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_blocked", len(self._blocked_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_paused", len(self._paused_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_discarded", len(self._discarded_jobs))
+            self._statsd.gauge(f"{self._statsd_prefix}_jobs_completed", len(self._completed_jobs.keys()))
+            await asyncio.sleep(5.0)
 
     async def free_thread(self):
         for i, cj in enumerate(self._current_jobs):
@@ -216,40 +278,20 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
             )
 
     async def JobsSummaryStatus(self, request, context):
-        queued_jobs = [
-            job.id
-            for job in self._jobs.values()
-            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_QUEUED
-        ]
-        active_jobs = [
-            job.id
-            for job in self._jobs.values()
-            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_ACTIVE
-        ]
-        blocked_jobs = [
-            job.id
-            for job in self._jobs.values()
-            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_BLOCKED
-        ]
-        paused_jobs = [
-            job.id
-            for job in self._jobs.values()
-            if job.status == orchestrator_pb2.JobStatus.JOB_STATUS_PAUSED
-        ]
-        discarded_jobs = list(self._errored_jobs.keys()) + self._canceled_jobs
+        await self.compute_metrics()
         return orchestrator_pb2.JobsSummaryStatusResponse(
             num_completed_jobs=len(self._completed_jobs.keys()),
             completed_jobs=self._completed_jobs.keys(),
-            num_queued_jobs=len(queued_jobs),
-            queued_jobs=queued_jobs,
-            num_active_jobs=len(active_jobs),
-            active_jobs=active_jobs,
-            num_blocked_jobs=len(blocked_jobs),
-            blocked_jobs=blocked_jobs,
-            num_paused_jobs=len(paused_jobs),
-            paused_jobs=paused_jobs,
-            num_discarded_jobs=len(discarded_jobs),
-            discarded_jobs=discarded_jobs,
+            num_queued_jobs=len(self._queued_jobs),
+            queued_jobs=self._queued_jobs,
+            num_active_jobs=len(self._active_jobs),
+            active_jobs=self._active_jobs,
+            num_blocked_jobs=len(self._blocked_jobs),
+            blocked_jobs=self._blocked_jobs,
+            num_paused_jobs=len(self._paused_jobs),
+            paused_jobs=self._paused_jobs,
+            num_discarded_jobs=len(self._discarded_jobs),
+            discarded_jobs=self._discarded_jobs,
         )
 
     async def pause(self):
@@ -302,15 +344,26 @@ class Orchestrator(orchestrator_pb2_grpc.OrchestratorServiceServicer):
         return orchestrator_pb2.CancelJobResponse(success=success, message=message)
 
 
-async def serve(port, num_allowed_threads):
+import signal
+
+async def serve(port, num_allowed_threads, statsd_port=None):
     server = aio.server()
     orchestrator_pb2_grpc.add_OrchestratorServiceServicer_to_server(
-        Orchestrator(num_allowed_threads), server
+        Orchestrator(num_allowed_threads, statsd_port), server
     )
     listen_addr = f"[::]:{port}"
     server.add_insecure_port(listen_addr)
     logging.info(f"Starting orchestrator server on {listen_addr}")
     await server.start()
+
+    async def graceful_shutdown():
+        logging.info("Shutting down server...")
+        await server.stop(5)
+        logging.info("Server stopped.")
+
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(graceful_shutdown()))
+
     await server.wait_for_termination()
 
 
@@ -328,16 +381,22 @@ async def serve(port, num_allowed_threads):
     default=DEFAULT_INSECURE_PORT,
 )
 @click.option(
+    "--statsd-port",
+    type=int,
+    default=None,
+    help="StatsD metrics publish port",
+)
+@click.option(
     "-l",
     "--log-level",
     type=LogLevel(),
     default=logging.INFO,
 )
-def cli(num_allowed_threads, port, log_level):
+def cli(num_allowed_threads, port, statsd_port, log_level):
     """Spawn the Orchestrator daemon."""
     logging.basicConfig(level=log_level)
     logging.info(f"Log level set to {log_level}")
-    asyncio.run(serve(port, num_allowed_threads))
+    asyncio.run(serve(port, num_allowed_threads, statsd_port))
 
 
 def main():
