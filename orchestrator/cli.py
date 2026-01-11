@@ -371,6 +371,71 @@ def mp4(ctx: click.Context, input, output, mute, blocker, priority):
 
 @cli.command()
 @click.pass_context
+@click.argument("input")
+@click.argument("output")
+@click.option("-b", "--blocker", type=int, multiple=True, help="Job ID(s) to block on")
+@click.option(
+    "--priority",
+    "priority",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Priority level for the job",
+)
+def mp4(ctx: click.Context, input, output, blocker, priority):
+    """Kickoff a png job"""
+
+    async def cmd_impl(inp, out, pri, blk):
+        async with aio.insecure_channel(
+            f"localhost:{ctx.obj['insecure_port']}"
+        ) as channel:
+            stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            if inp.isnumeric():
+                try:
+                    response = await stub.KickoffJob(
+                        orchestrator_pb2.KickoffJobRequest(
+                            priority=pri,
+                            blocking_job_ids=blk,
+                            mp4=orchestrator_pb2.PngJob(
+                                job_id_input=int(inp), output_path=out
+                            ),
+                        )
+                    )
+                except:
+                    print(
+                        Fore.RED
+                        + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                        + Style.RESET_ALL
+                    )
+                    exit()
+            else:
+                try:
+                    response = await stub.KickoffJob(
+                        orchestrator_pb2.KickoffJobRequest(
+                            priority=pri,
+                            blocking_job_ids=blk,
+                            mp4=orchestrator_pb2.PngJob(
+                                input_path=inp, output_path=out
+                            ),
+                        )
+                    )
+                except:
+                    print(
+                        Fore.RED
+                        + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                        + Style.RESET_ALL
+                    )
+                    exit()
+        if response.success:
+            print(response.job_id)
+        else:
+            print(Fore.RED + "Failed" + Style.RESET_ALL + f": {response.message}")
+
+    asyncio.run(cmd_impl(input, output, priority, list(blocker)))
+
+
+@cli.command()
+@click.pass_context
 @click.argument("input", nargs=-1)
 @click.argument("output")
 @click.option("-b", "--blocker", type=int, multiple=True, help="Job ID(s) to block on")
