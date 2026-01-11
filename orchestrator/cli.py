@@ -382,7 +382,7 @@ def mp4(ctx: click.Context, input, output, mute, blocker, priority):
     show_default=True,
     help="Priority level for the job",
 )
-def mp4(ctx: click.Context, input, output, blocker, priority):
+def png(ctx: click.Context, input, output, blocker, priority):
     """Kickoff a png job"""
 
     async def cmd_impl(inp, out, pri, blk):
