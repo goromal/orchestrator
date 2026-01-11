@@ -107,6 +107,43 @@ class Job(object):
         return self.children
 
 
+class PngJob(Job):
+    def __init__(
+        self, priority, blockers, input_path, input_id, output_path
+    ):
+        self.output_path = output_path
+        self.child_counter = 0
+        if input_id is None:
+            exec = ["png", input_path, self.output_path]
+        else:
+            # not ready
+            exec = ["png__uninitialized"]
+        super(PngJob, self).__init__(
+            priority, blockers, [input_id] if input_id is not None else [], exec
+        )
+
+    async def getOutputs(self, stdout):
+        return [self.output_path]
+
+    async def processBlockingChildOutputs(self, id, outputs):
+        if outputs is not None:
+            if len(outputs) > 0:
+                for output in outputs:
+                    logging.debug(
+                        f"Job ID {self.id} spawning child #{self.child_counter}"
+                    )
+                    self.children.append(
+                        PngJob(
+                            self.priority,
+                            self.blockers[:],
+                            output,
+                            None,
+                            f"{os.path.dirname(self.output_path)}/{os.path.basename(output)}_{os.path.basename(self.output_path).replace('.png', '')}_{self.child_counter}.png",
+                        )
+                    )
+                    self.child_counter += 1
+
+
 class Mp4Job(Job):
     def __init__(
         self, priority, blockers, input_path, input_id, output_path, mute=False
@@ -275,6 +312,31 @@ def jobFromProto(proto):
                     proto.mp4.job_id_input,
                     proto.mp4.output_path,
                     proto.mp4.mute,
+                ),
+                "",
+            )
+        else:
+            return None, "Input not specified"
+    elif proto.WhichOneof("job") == "png":
+        if proto.png.WhichOneof("input") == "input_path":
+            return (
+                PngJob(
+                    proto.priority,
+                    list(proto.blocking_job_ids),
+                    proto.png.input_path,
+                    None,
+                    proto.png.output_path,
+                ),
+                "",
+            )
+        elif proto.png.WhichOneof("input") == "job_id_input":
+            return (
+                PngJob(
+                    proto.priority,
+                    list(proto.blocking_job_ids),
+                    None,
+                    proto.png.job_id_input,
+                    proto.png.output_path,
                 ),
                 "",
             )
