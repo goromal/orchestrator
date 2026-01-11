@@ -396,7 +396,7 @@ def png(ctx: click.Context, input, output, blocker, priority):
                         orchestrator_pb2.KickoffJobRequest(
                             priority=pri,
                             blocking_job_ids=blk,
-                            mp4=orchestrator_pb2.PngJob(
+                            png=orchestrator_pb2.PngJob(
                                 job_id_input=int(inp), output_path=out
                             ),
                         )
@@ -414,7 +414,7 @@ def png(ctx: click.Context, input, output, blocker, priority):
                         orchestrator_pb2.KickoffJobRequest(
                             priority=pri,
                             blocking_job_ids=blk,
-                            mp4=orchestrator_pb2.PngJob(
+                            png=orchestrator_pb2.PngJob(
                                 input_path=inp, output_path=out
                             ),
                         )
