@@ -391,23 +391,23 @@ def png(ctx: click.Context, input, output, blocker, priority):
         ) as channel:
             stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
             if inp.isnumeric():
-                try:
-                    response = await stub.KickoffJob(
-                        orchestrator_pb2.KickoffJobRequest(
-                            priority=pri,
-                            blocking_job_ids=blk,
-                            png=orchestrator_pb2.PngJob(
-                                job_id_input=int(inp), output_path=out
-                            ),
-                        )
+                # try:
+                response = await stub.KickoffJob(
+                    orchestrator_pb2.KickoffJobRequest(
+                        priority=pri,
+                        blocking_job_ids=blk,
+                        png=orchestrator_pb2.PngJob(
+                            job_id_input=int(inp), output_path=out
+                        ),
                     )
-                except:
-                    print(
-                        Fore.RED
-                        + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
-                        + Style.RESET_ALL
-                    )
-                    exit()
+                )
+                # except:
+                #     print(
+                #         Fore.RED
+                #         + f"orchestratord either is not running or is not listening on port {ctx.obj['insecure_port']}"
+                #         + Style.RESET_ALL
+                #     )
+                #     exit()
             else:
                 try:
                     response = await stub.KickoffJob(
