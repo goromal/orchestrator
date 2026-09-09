@@ -3,6 +3,7 @@ import glob
 import logging
 import re
 import os
+import shlex
 
 from aapis.orchestrator.v1 import orchestrator_pb2
 
@@ -279,7 +280,13 @@ class RemoveJob(Job):
 
 class BashJob(Job):
     def __init__(self, priority, blockers, bash_command):
-        super(BashJob, self).__init__(priority, blockers, [], bash_command.split())
+        # Jobs are exec'd directly rather than through a shell, so the command
+        # has to be split into argv here. shlex honors quoting, which a plain
+        # split() does not: without it any argument containing whitespace -- a
+        # path with a space, a quoted option value -- is torn into several args.
+        super(BashJob, self).__init__(
+            priority, blockers, [], shlex.split(bash_command)
+        )
 
 
 class SyncJob(Job):
