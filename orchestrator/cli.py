@@ -201,11 +201,12 @@ def status(ctx: click.Context, target):
                 + response.num_paused_jobs
             )
         else:
+            # Repeated protobuf fields do not concatenate with +.
             jobs = (
-                response.active_jobs
-                + response.queued_jobs
-                + response.blocked_jobs
-                + response.paused_jobs
+                list(response.active_jobs)
+                + list(response.queued_jobs)
+                + list(response.blocked_jobs)
+                + list(response.paused_jobs)
             )
             jobs_str = [str(j) for j in jobs]
             print(" ".join(jobs_str))
