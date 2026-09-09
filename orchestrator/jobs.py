@@ -43,9 +43,17 @@ class Job(object):
             )
             # TODO handle sudo
             stdout, stderr = await proc.communicate()
+            returncode = proc.returncode
         except Exception as e:
             stdout = None
             stderr = f"{e}".encode()
+            returncode = 1
+        # A silent failure is still a failure: a program that exits non-zero
+        # without writing to stderr (one that redirects it away, say) must not
+        # be reported as success, or jobs blocked on it will run against work
+        # that never happened.
+        if returncode and not stderr:
+            stderr = f"exited with status {returncode}".encode()
         return stdout, stderr
 
     async def getOutputs(self, stdout):
